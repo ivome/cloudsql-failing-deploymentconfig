@@ -1,0 +1,26 @@
+imports:
+- path: api_service_account.jinja
+- path: network.jinja
+
+resources:
+- name: network
+  type: network.jinja
+- name: api_service_account
+  type: api_service_account.jinja
+- name: db
+  type: cloudsql.jinja
+  properties:
+    zone: {{ properties['zone'] }}
+    {#
+    dbUser:
+      user: root
+      password: 1234seroiguh
+    database:
+      name: test
+    failover: true
+    #}
+    readReplicas: 0
+    cloudsql:
+      clientServiceAccounts:
+        - "user-$(ref.{{ env["deployment"] }}-api-serviceaccount.email)"
+      privateNetwork: $(ref.{{ env["deployment"] }}-network.selfLink)

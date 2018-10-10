@@ -1,0 +1,14 @@
+info:
+  title: CloudSQL test
+  description: Creates a CloudSQL instance
+  version: 1.0
+
+imports:
+- path: api_service_account.jinja
+- path: cloudsql.jinja
+- path: network.jinja
+
+properties:
+  zone:
+    type: string
+    description: Zone in which this resources VM will be created

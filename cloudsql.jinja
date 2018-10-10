@@ -1,0 +1,133 @@
+{% set ID = env['deployment'] %}
+
+{%- macro dbDependencyList(failover='', readReplicas='') -%}
+  {% for i in range(readReplicas) %}
+    - {{ ID }}-rr-{{ i }}
+  {% endfor %}
+{%- endmacro %}
+
+{% set dbDeps = dbDependencyList(properties['failover'],
+  properties['readReplicas']) %}
+
+resources:
+- name: {{ ID }}-master
+  type: sqladmin.v1beta4.instance
+    {#
+  {% if properties['cloudsql']['clientServiceAccounts'] %}
+  accessControl:
+    gcpIamPolicy:
+      bindings:
+      - role: roles/cloudsql.client
+        members:
+        {% for role in properties['cloudsql']['clientServiceAccounts'] %}
+        - {{ role }}
+        {% endfor %}
+  {% endif %}
+#}
+  properties:
+    backendType: SECOND_GEN
+    instanceType: CLOUD_SQL_INSTANCE
+    databaseVersion: {{ properties['cloudsql']['databaseVersion'] }}
+    region: {{ properties['cloudsql']['region'] }}
+    settings:
+      tier: {{ properties['cloudsql']['tier'] }}
+      dataDiskSizeGb: {{ properties['cloudsql']['dataDiskSizeGb'] }}
+      dataDiskType: {{ properties['cloudsql']['dataDiskType'] }}
+      storageAutoResize: true
+      replicationType: SYNCHRONOUS
+      locationPreference:
+        zone: {{ properties['cloudsql']['zone'] }}
+      {% if properties['databaseFlags'] %}
+      databaseFlags: {{ properties['databaseFlags'] }}
+      {% endif %}
+      activationPolicy: ALWAYS
+      backupConfiguration:
+        enabled: true
+        startTime: {{ properties['cloudsql']['backupStartTime'] }}
+      ipConfiguration:
+        {% if properties['cloudsql']['authorizedNetworks'] %}
+        authorizedNetworks:
+        {% for network in properties['cloudsql']['authorizedNetworks'] %}
+          - name: {{ network.name }}
+            kind: "sql#aclEntry"
+            value: {{ network.value }}
+        {% endfor %}
+        {% endif %}
+        {% if properties['cloudsql']['privateNetwork'] %}
+        privateNetwork: {{ properties['cloudsql']['privateNetwork'] }}
+        {% endif %}
+
+{% for i in range(properties['readReplicas']) %}
+- name: {{ ID }}-rr-{{ i }}
+  type: sqladmin.v1beta4.instance
+  properties:
+    backendType: SECOND_GEN
+    instanceType: READ_REPLICA_INSTANCE
+    databaseVersion: {{ properties['cloudsql']['databaseVersion'] }}
+    region: {{ properties['cloudsql']['region'] }}
+    masterInstanceName: {{ ID }}-master
+    replicaConfiguration:
+      failoverTarget: false
+    settings:
+      tier: {{ properties['cloudsql']['tier'] }}
+      ipConfiguration:
+        {% if properties['cloudsql']['authorizedNetworks'] %}
+        authorizedNetworks:
+        {% for network in properties['cloudsql']['authorizedNetworks'] %}
+          - name: {{ network.name }}
+            kind: "sql#aclEntry"
+            value: {{ network.value }}
+        {% endfor %}
+        {% endif %}
+        {% if properties['cloudsql']['privateNetwork'] %}
+        privateNetwork: {{ properties['cloudsql']['privateNetwork'] }}
+        {% endif %}
+  metadata:
+    dependsOn:
+      - {{ ID }}-master
+{% endfor %}
+
+{% if properties['database'] %}
+- name: {{ ID }}-db
+  type: sqladmin.v1beta4.database
+  properties:
+    name: {{ properties['database']['name'] }}
+    instance: {{ ID }}-master
+    charset: {{ properties['database']['charset'] }}
+  metadata:
+    dependsOn:
+      {{ dbDeps }}
+{% endif %}
+
+{% if properties['dbUser'] %}
+- name: {{ ID }}-db-root
+  type: sqladmin.v1beta4.user
+  properties:
+    name: {{ properties['dbUser']['name'] }}
+    host:  "{{ properties['dbUser']['host'] }}"
+    instance: {{ ID }}-master
+    password: {{ properties['dbUser']['password'] }}
+  metadata:
+    dependsOn:
+    {% if properties['database'] %}
+      - {{ ID }}-db
+    {% else %}
+      {{ dbDeps }}
+    {% endif %}
+{% endif %}
+{#
+#}
+
+{#
+outputs:
+  - name: {{ ID }}-master-ip
+    value: $(ref.{{ ID }}-master.ipAddresses[0].ipAddress)
+  - name: {{ ID }}-master-connectionName
+    value: $(ref.{{ ID }}-master.connectionName)
+  {% for i in range(properties['readReplicas']) %}
+  - name: {{ ID }}-rr-{{ i }}-ip
+    value: $(ref.{{ ID }}-rr-{{ i }}.ipAddresses[0].ipAddress)
+  - name: {{ ID }}-rr-{{ i }}-connectionName
+    value: $(ref.{{ ID }}-rr-{{ i }}.connectionName)
+  {% endfor %}
+#}

@@ -1,0 +1,12 @@
+# Launches an autoscaled, load-balanced frontend running nodejs for serving
+# traffic. Also launches a single MySQL container instance, wires the two
+# together using references, and passes them as env variables to the underlying
+# frontend Docker containers.
+imports:
+- path: test.jinja
+
+resources:
+- name: test
+  type: test.jinja
+  properties:
+    zone: us-central1-a
